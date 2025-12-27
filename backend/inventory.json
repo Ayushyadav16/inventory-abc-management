@@ -1,0 +1,89 @@
+{
+  "items": [
+    {
+      "id": "1766809274064",
+      "createdAt": "2025-12-27T04:21:14.064Z",
+      "quantitySold": 0,
+      "name": "Asian Paints",
+      "sku": "asian-01",
+      "category": "Paint",
+      "quantity": 50,
+      "unitPrice": 1000,
+      "reorderPoint": 10,
+      "supplier": "",
+      "location": "Warehouse A"
+    },
+    {
+      "id": "1766811216208",
+      "createdAt": "2025-12-27T04:53:36.208Z",
+      "quantitySold": 0,
+      "name": "Berger Paints",
+      "sku": "berger-11",
+      "category": "Paint",
+      "quantity": "40",
+      "unitPrice": "2000",
+      "reorderPoint": "10",
+      "supplier": "",
+      "location": "Warehouse B"
+    },
+    {
+      "id": "1766811942939",
+      "createdAt": "2025-12-27T05:05:42.939Z",
+      "quantitySold": 0,
+      "name": "Kajaria Tiles",
+      "sku": "ky-1221",
+      "category": "tiles",
+      "quantity": "350",
+      "unitPrice": "5000",
+      "reorderPoint": "50",
+      "supplier": "insyd ",
+      "location": "Warehouse B"
+    }
+  ],
+  "transactions": [
+    {
+      "id": "1766809125165",
+      "itemId": "1766809125165",
+      "type": "ADD",
+      "quantity": 0,
+      "timestamp": "2025-12-27T04:18:45.165Z",
+      "notes": "Initial stock"
+    },
+    {
+      "id": "1766809274064",
+      "itemId": "1766809274064",
+      "type": "ADD",
+      "quantity": 50,
+      "timestamp": "2025-12-27T04:21:14.064Z",
+      "notes": "Initial stock"
+    },
+    {
+      "id": "1766811216208",
+      "itemId": "1766811216208",
+      "type": "ADD",
+      "quantity": "40",
+      "timestamp": "2025-12-27T04:53:36.208Z",
+      "notes": "Initial stock"
+    },
+    {
+      "id": "1766811942939",
+      "itemId": "1766811942939",
+      "type": "ADD",
+      "quantity": "350",
+      "timestamp": "2025-12-27T05:05:42.939Z",
+      "notes": "Initial stock"
+    }
+  ],
+  "settings": {
+    "lowStockThreshold": 10,
+    "categories": [
+      "Cement",
+      "Steel",
+      "Tiles",
+      "Paint",
+      "Plumbing",
+      "Electrical",
+      "Hardware"
+    ]
+  }
+}

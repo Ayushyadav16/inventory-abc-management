@@ -38,6 +38,19 @@
       "reorderPoint": "50",
       "supplier": "insyd ",
       "location": "Warehouse B"
+    },
+    {
+      "id": "1766913682446",
+      "createdAt": "2025-12-28T09:21:22.446Z",
+      "quantitySold": 0,
+      "name": "ACC Cement",
+      "sku": "ACC-11",
+      "category": "Cement",
+      "quantity": 200,
+      "unitPrice": 300,
+      "reorderPoint": 10,
+      "supplier": "",
+      "location": "Warehouse A"
     }
   ],
   "transactions": [
@@ -71,6 +84,14 @@
       "type": "ADD",
       "quantity": "350",
       "timestamp": "2025-12-27T05:05:42.939Z",
+      "notes": "Initial stock"
+    },
+    {
+      "id": "1766913682446",
+      "itemId": "1766913682446",
+      "type": "ADD",
+      "quantity": 200,
+      "timestamp": "2025-12-28T09:21:22.446Z",
       "notes": "Initial stock"
     }
   ],

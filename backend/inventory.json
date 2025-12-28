@@ -42,15 +42,17 @@
     {
       "id": "1766913682446",
       "createdAt": "2025-12-28T09:21:22.446Z",
-      "quantitySold": 0,
+      "quantitySold": 150,
       "name": "ACC Cement",
       "sku": "ACC-11",
       "category": "Cement",
-      "quantity": 200,
+      "quantity": 300,
       "unitPrice": 300,
       "reorderPoint": 10,
       "supplier": "",
-      "location": "Warehouse A"
+      "location": "Warehouse A",
+      "revenue": 0,
+      "abcCategory": "C"
     }
   ],
   "transactions": [
@@ -93,6 +95,22 @@
       "quantity": 200,
       "timestamp": "2025-12-28T09:21:22.446Z",
       "notes": "Initial stock"
+    },
+    {
+      "id": "1766919576883",
+      "itemId": "1766913682446",
+      "type": "SALE",
+      "quantity": 150,
+      "timestamp": "2025-12-28T10:59:36.884Z",
+      "notes": ""
+    },
+    {
+      "id": "1766920386471",
+      "itemId": "1766913682446",
+      "type": "RESTOCK",
+      "quantity": 250,
+      "timestamp": "2025-12-28T11:13:06.471Z",
+      "notes": ""
     }
   ],
   "settings": {

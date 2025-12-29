@@ -17,9 +17,9 @@ import {
   LayoutDashboard,
   Box,
   ShoppingCart,
-  X,
-  Check,
   XCircle,
+  Check,
+  IndianRupee,
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -36,6 +36,9 @@ interface InventoryItem {
   location: string;
   abcCategory?: string;
   quantitySold?: number;
+  isDeadStock?: boolean;
+  lastSoldDate?: string; // Add this for better dead stock calculation
+  createdAt: string; // Add this
 }
 
 interface Analytics {
@@ -47,13 +50,22 @@ interface Analytics {
   categoryDistribution: Record<string, number>;
 }
 
+interface TurnoverResult {
+  ratio: string;
+  performance: string;
+}
+
+// Helper function to format rupee amounts
+const formatRupee = (amount: number): string => {
+  return `₹${amount.toLocaleString()}`;
+};
+
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "inventory">(
     "dashboard"
   );
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
-  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState("All Categories");
   const [filterClass, setFilterClass] = useState("All Classes");
@@ -63,26 +75,29 @@ export default function DashboardPage() {
     fetchData();
   }, []);
 
-  // Add this function in your DashboardPage component
   const calculateABCCategory = (items: InventoryItem[]) => {
     if (items.length === 0) return {};
 
-    // Sort items by total value (quantity × unitPrice) in descending order
-    const sortedItems = [...items].sort(
-      (a, b) => b.quantity * b.unitPrice - a.quantity * a.unitPrice
+    const itemsWithValue = items.map((item) => ({
+      ...item,
+      totalValue: item.quantity * item.unitPrice,
+      salesVelocity: (item.quantitySold || 0) / 30,
+    }));
+
+    const sortedItems = [...itemsWithValue].sort(
+      (a, b) => b.totalValue - a.totalValue
     );
 
-    // Calculate cumulative values
     const totalValue = sortedItems.reduce(
-      (sum, item) => sum + item.quantity * item.unitPrice,
+      (sum, item) => sum + item.totalValue,
       0
     );
 
     let cumulativeValue = 0;
     const result: { [key: string]: string } = {};
 
-    sortedItems.forEach((item, index) => {
-      cumulativeValue += item.quantity * item.unitPrice;
+    sortedItems.forEach((item) => {
+      cumulativeValue += item.totalValue;
       const cumulativePercentage = (cumulativeValue / totalValue) * 100;
 
       if (cumulativePercentage <= 80) {
@@ -92,9 +107,53 @@ export default function DashboardPage() {
       } else {
         result[item.id] = "C";
       }
+
+      // Downgrade dead stock items (but don't automatically mark as dead stock)
+      const isDead = calculateIsDeadStock(item);
+      if (isDead) {
+        if (result[item.id] === "A") result[item.id] = "B";
+        else if (result[item.id] === "B") result[item.id] = "C";
+      }
     });
 
     return result;
+  };
+
+  const calculateIsDeadStock = (item: InventoryItem): boolean => {
+    // Improved dead stock algorithm:
+    // 1. Check if quantity is 0 (not dead stock if no stock)
+    if (item.quantity === 0) return false;
+
+    // 2. Check if never sold AND created more than 90 days ago
+    const currentDate = new Date();
+    const createdDate = new Date(item.createdAt || currentDate);
+    const daysSinceCreation = Math.floor(
+      (currentDate.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if ((item.quantitySold || 0) === 0) {
+      // If never sold and created more than 90 days ago
+      return daysSinceCreation > 90;
+    }
+
+    // 3. Check last sold date if available
+    if (item.lastSoldDate) {
+      const lastSold = new Date(item.lastSoldDate);
+      const daysSinceLastSale = Math.floor(
+        (currentDate.getTime() - lastSold.getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      // If no sales in last 180 days AND has stock
+      return daysSinceLastSale > 180;
+    }
+
+    // 4. Check sales velocity (quantity sold per day)
+    // Assuming average of 30 days for sales calculation
+    const salesPerDay = (item.quantitySold || 0) / 30;
+    const daysOfStock = item.quantity / (salesPerDay || 0.01); // Avoid division by zero
+
+    // If stock will last more than 365 days at current sales rate
+    return daysOfStock > 365 && item.quantity > 0;
   };
 
   const fetchData = async () => {
@@ -107,17 +166,31 @@ export default function DashboardPage() {
       const inventoryData = await inventoryRes.json();
       const analyticsData = await analyticsRes.json();
 
-      // Calculate ABC categories
       const abcCategories = calculateABCCategory(inventoryData.items);
 
-      // Add ABC category to each item
+      const abcDistribution = {
+        A: inventoryData.items.filter(
+          (item: InventoryItem) => abcCategories[item.id] === "A"
+        ).length,
+        B: inventoryData.items.filter(
+          (item: InventoryItem) => abcCategories[item.id] === "B"
+        ).length,
+        C: inventoryData.items.filter(
+          (item: InventoryItem) => abcCategories[item.id] === "C"
+        ).length,
+      };
+
       const itemsWithABC = inventoryData.items.map((item: InventoryItem) => ({
         ...item,
         abcCategory: abcCategories[item.id] || "C",
+        isDeadStock: calculateIsDeadStock(item),
       }));
 
       setItems(itemsWithABC);
-      setAnalytics(analyticsData);
+      setAnalytics({
+        ...analyticsData,
+        abcDistribution,
+      });
       setLoading(false);
     } catch (error) {
       console.error("Failed to fetch data:", error);
@@ -129,28 +202,40 @@ export default function DashboardPage() {
     if (!confirm("Are you sure you want to delete this item?")) return;
     try {
       await fetch(`${API_BASE}/api/inventory/${id}`, { method: "DELETE" });
-      fetchData();
+      await fetchData();
     } catch (error) {
       console.error("Failed to delete item:", error);
     }
   };
 
-  const calculateDeadStock = () => {
-    return items.filter((item) => (item.quantitySold || 0) === 0).length;
+  const calculateDeadStock = (): number => {
+    return items.filter((item) => item.isDeadStock).length;
   };
 
-  const calculateTurnover = () => {
-    if (items.length === 0) return "0.00";
+  const calculateTurnover = (): TurnoverResult => {
+    if (items.length === 0) return { ratio: "N/A", performance: "N/A" };
+
     const totalSold = items.reduce(
       (sum, item) => sum + (item.quantitySold || 0),
       0
     );
     const avgInventory =
-      items.reduce((sum, item) => sum + item.quantity, 0) / items.length || 1;
-    return (totalSold / avgInventory).toFixed(2);
+      items.reduce((sum, item) => sum + item.quantity, 0) / items.length;
+
+    if (avgInventory === 0) return { ratio: "0.00", performance: "Low" };
+
+    const ratio = (totalSold / avgInventory).toFixed(2);
+
+    let performance = "";
+    const ratioNum = parseFloat(ratio);
+    if (ratioNum > 4) performance = "High";
+    else if (ratioNum > 2) performance = "Good";
+    else if (ratioNum > 1) performance = "Average";
+    else performance = "Low";
+
+    return { ratio, performance };
   };
 
-  // Add this missing function
   const getABCPercentages = () => {
     if (!analytics?.abcDistribution) {
       return { A: 0, B: 0, C: 0 };
@@ -279,6 +364,7 @@ export default function DashboardPage() {
             calculateTurnover={calculateTurnover}
             getABCPercentages={getABCPercentages}
             getTopAItems={getTopAItems}
+            formatRupee={formatRupee}
           />
         ) : (
           <InventoryView
@@ -292,6 +378,7 @@ export default function DashboardPage() {
             categories={categories}
             deleteItem={deleteItem}
             fetchData={fetchData}
+            formatRupee={formatRupee}
           />
         )}
       </main>
@@ -307,12 +394,14 @@ function DashboardView({
   calculateTurnover,
   getABCPercentages,
   getTopAItems,
+  formatRupee,
 }: any) {
   const abcPercentages = getABCPercentages();
   const topAItems = getTopAItems();
   const categoryData: [string, number][] = Object.entries(
     analytics?.categoryDistribution || {}
   ).map(([key, value]) => [key, value as number]);
+  const turnover = calculateTurnover();
 
   return (
     <div className="space-y-6">
@@ -327,8 +416,8 @@ function DashboardView({
         />
         <StatCard
           title="Total Value"
-          value={`$${(analytics?.totalValue || 0).toLocaleString()}`}
-          icon={<DollarSign className="text-emerald-600" size={28} />}
+          value={formatRupee(analytics?.totalValue || 0)}
+          icon={<IndianRupee className="text-emerald-600" size={28} />}
           gradient="from-emerald-500 to-emerald-600"
           bgGradient="from-emerald-50 to-emerald-100"
         />
@@ -356,13 +445,28 @@ function DashboardView({
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-sm font-medium text-gray-600 mb-2">
-                Turnover Ratio
+                Inventory Turnover
               </h3>
               <p className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                {calculateTurnover()}x
+                {turnover.ratio}x
               </p>
+              <div className="flex items-center gap-2 mt-2">
+                <span
+                  className={`px-3 py-1 rounded-full text-xs font-bold ${
+                    turnover.performance === "High"
+                      ? "bg-green-100 text-green-800"
+                      : turnover.performance === "Good"
+                      ? "bg-blue-100 text-blue-800"
+                      : turnover.performance === "Average"
+                      ? "bg-yellow-100 text-yellow-800"
+                      : "bg-red-100 text-red-800"
+                  }`}
+                >
+                  {turnover.performance} Turnover
+                </span>
+              </div>
               <p className="text-sm text-gray-500 mt-1">
-                inventory turns annually
+                Annual stock turns (Industry avg: 4-6x)
               </p>
             </div>
             <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-blue-100 rounded-2xl flex items-center justify-center">
@@ -380,21 +484,27 @@ function DashboardView({
               <div className="flex items-center gap-4 mt-3">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">
-                    {abcPercentages.A}%
+                    {analytics?.abcDistribution?.A || 0}
                   </div>
-                  <div className="text-xs text-gray-500">Class A</div>
+                  <div className="text-xs text-gray-500">
+                    Class A ({abcPercentages.A}%)
+                  </div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-yellow-600">
-                    {abcPercentages.B}%
+                    {analytics?.abcDistribution?.B || 0}
                   </div>
-                  <div className="text-xs text-gray-500">Class B</div>
+                  <div className="text-xs text-gray-500">
+                    Class B ({abcPercentages.B}%)
+                  </div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-gray-600">
-                    {abcPercentages.C}%
+                    {analytics?.abcDistribution?.C || 0}
                   </div>
-                  <div className="text-xs text-gray-500">Class C</div>
+                  <div className="text-xs text-gray-500">
+                    Class C ({abcPercentages.C}%)
+                  </div>
                 </div>
               </div>
             </div>
@@ -503,7 +613,7 @@ function DashboardView({
               <p className="text-sm text-gray-500 mb-4">{item.sku}</p>
               <div className="pt-4 border-t border-blue-200">
                 <div className="text-2xl font-bold text-gray-900">
-                  ${(item.quantity * item.unitPrice).toLocaleString()}
+                  {formatRupee(item.quantity * item.unitPrice)}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">Total Value</div>
               </div>
@@ -527,6 +637,7 @@ function InventoryView({
   categories,
   deleteItem,
   fetchData,
+  formatRupee,
 }: any) {
   const [showInlineAdd, setShowInlineAdd] = React.useState(false);
   const [editingItem, setEditingItem] = React.useState<any>(null);
@@ -583,7 +694,7 @@ function InventoryView({
         </div>
       </div>
 
-      {/* 🔽 INLINE ADD FORM (DROPDOWN) */}
+      {/* FORMS */}
       {showInlineAdd && (
         <InlineAddItemForm
           onCancel={() => setShowInlineAdd(false)}
@@ -594,7 +705,6 @@ function InventoryView({
         />
       )}
 
-      {/* 🔽 INLINE EDIT FORM */}
       {editingItem && (
         <InlineEditItemForm
           item={editingItem}
@@ -606,7 +716,6 @@ function InventoryView({
         />
       )}
 
-      {/* 🔽 INLINE SELL FORM */}
       {sellingItem && (
         <InlineSellItemForm
           item={sellingItem}
@@ -618,7 +727,7 @@ function InventoryView({
         />
       )}
 
-      {/* INVENTORY CARDS (ONLY WHEN NO FORM IS OPEN) */}
+      {/* INVENTORY CARDS */}
       {!showInlineAdd && !editingItem && !sellingItem && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {items.map((item: any) => (
@@ -636,6 +745,24 @@ function InventoryView({
                 <ABCBadge category={item.abcCategory || "C"} />
               </div>
 
+              <div className="flex justify-between mb-4 pb-4 border-b border-gray-200">
+                <span className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded font-semibold">
+                  {item.category}
+                </span>
+                <div className="flex gap-2">
+                  <StatusBadge
+                    quantity={item.quantity}
+                    reorderPoint={item.reorderPoint}
+                  />
+                  {item.isDeadStock && (
+                    <span className="px-2 py-1 bg-red-100 text-red-700 rounded-md text-xs font-bold flex items-center gap-1">
+                      <Skull size={10} />
+                      Dead Stock
+                    </span>
+                  )}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-blue-50 rounded-lg p-3">
                   <div className="text-xs text-blue-600 font-medium">
@@ -650,19 +777,9 @@ function InventoryView({
                     Price
                   </div>
                   <div className="text-xl font-bold text-gray-900">
-                    ${item.unitPrice}
+                    {formatRupee(item.unitPrice)}
                   </div>
                 </div>
-              </div>
-
-              <div className="flex justify-between mb-4 pb-4 border-b border-gray-200">
-                <span className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded font-semibold">
-                  {item.category}
-                </span>
-                <StatusBadge
-                  quantity={item.quantity}
-                  reorderPoint={item.reorderPoint}
-                />
               </div>
 
               <div className="grid grid-cols-3 gap-2">
@@ -731,6 +848,7 @@ function InlineAddItemForm({ onCancel, onSuccess }: any) {
           quantity: Number(formData.quantity),
           unitPrice: Number(formData.unitPrice),
           reorderPoint: Number(formData.reorderPoint),
+          createdAt: new Date().toISOString(), // Add creation date
         }),
       });
 
@@ -836,7 +954,7 @@ function InlineAddItemForm({ onCancel, onSuccess }: any) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Unit Price ($) *
+              Unit Price (₹) *
             </label>
             <input
               type="number"
@@ -1067,7 +1185,7 @@ function InlineEditItemForm({ item, onCancel, onSuccess }: any) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Unit Price ($)
+              Unit Price (₹)
             </label>
             <input
               type="number"
@@ -1191,6 +1309,7 @@ function InlineSellItemForm({ item, onCancel, onSuccess }: any) {
           ...item,
           quantity: item.quantity - sellQty,
           quantitySold: (item.quantitySold || 0) + sellQty,
+          lastSoldDate: new Date().toISOString(), // Update last sold date
         }),
       });
 
@@ -1242,7 +1361,7 @@ function InlineSellItemForm({ item, onCancel, onSuccess }: any) {
           <div>
             <div className="text-sm text-gray-600 font-medium">Unit Price</div>
             <div className="text-3xl font-bold text-gray-900">
-              ${item.unitPrice}
+              ₹{item.unitPrice}
             </div>
           </div>
         </div>
@@ -1281,10 +1400,10 @@ function InlineSellItemForm({ item, onCancel, onSuccess }: any) {
               Total Sale Value
             </div>
             <div className="text-3xl font-bold text-green-900">
-              ${totalValue}
+              ₹{totalValue}
             </div>
             <div className="text-xs text-green-700 mt-1">
-              {quantity} units × ${item.unitPrice} = ${totalValue}
+              {quantity} units × ₹{item.unitPrice} = ₹{totalValue}
             </div>
           </div>
         )}

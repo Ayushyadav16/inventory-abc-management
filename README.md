@@ -5,6 +5,9 @@ A full-stack **Inventory Management Web Application** built for **AEC (Architect
 This system helps businesses gain confidence in scaling their operations by clearly identifying high-value, medium-value, and low-value inventory items.
 
 ---
+## 🌐 Deployment
+
+Live Application: https://inventory-abc-management-frontend.onrender.com/
 
 ## 🚀 Key Features
 
